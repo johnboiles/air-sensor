@@ -101,42 +101,42 @@ void reconnect() {
 long lastMsg = 0;
 
 void loop() {
-    ArduinoOTA.handle();
-    yield();
+  ArduinoOTA.handle();
+  yield();
 
-    if (client.connected()) {
-      long now = millis();
-      if (now - lastMsg > 20000) {
-        lastMsg = now;
+  if (client.connected()) {
+    long now = millis();
+    if (now - lastMsg > 20000) {
+      lastMsg = now;
 
-        // Reading temperature or humidity takes about 250 milliseconds!
-        // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-        float h = dht.readHumidity();
-        // Read temperature as Celsius (the default)
-        float t = dht.readTemperature();
-        if (isnan(h) || isnan(t)) {
-          Serial.println("ERROR: Failed to read from DHT sensor!");
-        } else {
-          client.publish(humidity_topic, String(t).c_str(), true);
-          client.publish(temperature_topic, String(h).c_str(), true);
+      // Reading temperature or humidity takes about 250 milliseconds!
+      // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+      float h = dht.readHumidity();
+      // Read temperature as Celsius (the default)
+      float t = dht.readTemperature();
+      if (isnan(h) || isnan(t)) {
+        Serial.println("ERROR: Failed to read from DHT sensor!");
+      } else {
+        client.publish(humidity_topic, String(t).c_str(), true);
+        client.publish(temperature_topic, String(h).c_str(), true);
 
-          float rzero = gasSensor.getCorrectedRZero(t, h); //this to get the rzero value, uncomment this to get ppm value
-          Serial.printf("Rzero %s\n", String(rzero).c_str()); // this to display the rzero value continuously, uncomment this to get ppm value
-          client.publish(rzero_topic, String(rzero).c_str(), true);
-          float ppm = gasSensor.getCorrectedPPM(t, h); // this to get ppm value, uncomment this to get rzero value
-          // Serial.println(ppm); // this to display the ppm value continuously, uncomment this to get rzero value
-          client.publish(co2_topic, String(ppm).c_str(), true);
-
-        }
-
+        float rzero = gasSensor.getCorrectedRZero(t, h); //this to get the rzero value, uncomment this to get ppm value
+        Serial.printf("Rzero %s\n", String(rzero).c_str()); // this to display the rzero value continuously, uncomment this to get ppm value
+        client.publish(rzero_topic, String(rzero).c_str(), true);
+        float ppm = gasSensor.getCorrectedPPM(t, h); // this to get ppm value, uncomment this to get rzero value
+        // Serial.println(ppm); // this to display the ppm value continuously, uncomment this to get rzero value
+        client.publish(co2_topic, String(ppm).c_str(), true);
 
       }
-    } else {
-      reconnect();
-      // Wait 5 seconds before retrying
-      delay(5000);
-    }
-    client.loop();
 
-    delay(500);
+
+    }
+  } else {
+    reconnect();
+    // Wait 5 seconds before retrying
+    delay(5000);
+  }
+  client.loop();
+
+  delay(500);
 }
