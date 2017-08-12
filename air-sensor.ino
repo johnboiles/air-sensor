@@ -4,6 +4,7 @@
 #include <ArduinoOTA.h>
 #include <MQ135.h>
 #include <DHT.h>
+#include <RunningAverage.h>
 
 #define ANALOGPIN A0
 #define HOSTNAME "ESP8266-OTA-"
@@ -35,6 +36,14 @@ const PROGMEM char* ssid = ""; // Insert your SSID here
 const PROGMEM char* password = ""; // Insert your SSID password here
 
 MQ135 gasSensor = MQ135(ANALOGPIN);
+
+RunningAverage rzeroRA(30);
+RunningAverage co2RA(30);
+RunningAverage temperatureRA(30);
+RunningAverage humidityRA(30);
+
+#define PUBLISH_PERIOD 30000
+#define SAMPLE_PERIOD 1000
 
 // DHT - D1/GPIO5
 #define DHTPIN 5
@@ -75,6 +84,11 @@ void setup() {
 
   ArduinoOTA.setHostname((const char *)hostname.c_str());
   ArduinoOTA.begin();
+
+  rzeroRA.clear();
+  co2RA.clear();
+  temperatureRA.clear();
+  humidityRA.clear();
 }
 
 void reconnect() {
@@ -98,7 +112,8 @@ void reconnect() {
   }
 }
 
-long lastMsg = 0;
+long lastSampleTime = 0;
+long lastPublishTime = 0;
 
 void loop() {
   ArduinoOTA.handle();
@@ -106,8 +121,8 @@ void loop() {
 
   if (client.connected()) {
     long now = millis();
-    if (now - lastMsg > 20000) {
-      lastMsg = now;
+    if (now - lastSampleTime > SAMPLE_PERIOD) {
+      lastSampleTime = now;
 
       // Reading temperature or humidity takes about 250 milliseconds!
       // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
@@ -117,19 +132,29 @@ void loop() {
       if (isnan(h) || isnan(t)) {
         Serial.println("ERROR: Failed to read from DHT sensor!");
       } else {
-        client.publish(humidity_topic, String(t).c_str(), true);
-        client.publish(temperature_topic, String(h).c_str(), true);
-
         float rzero = gasSensor.getCorrectedRZero(t, h); //this to get the rzero value, uncomment this to get ppm value
-        Serial.printf("Rzero %s\n", String(rzero).c_str()); // this to display the rzero value continuously, uncomment this to get ppm value
-        client.publish(rzero_topic, String(rzero).c_str(), true);
+        // Serial.printf("Rzero %s\n", String(rzero).c_str()); // this to display the rzero value continuously, uncomment this to get ppm value
         float ppm = gasSensor.getCorrectedPPM(t, h); // this to get ppm value, uncomment this to get rzero value
         // Serial.println(ppm); // this to display the ppm value continuously, uncomment this to get rzero value
-        client.publish(co2_topic, String(ppm).c_str(), true);
 
+        humidityRA.addValue(h);
+        temperatureRA.addValue(t);
+        rzeroRA.addValue(rzero);
+        co2RA.addValue(ppm);
       }
+    }
+    if (now - lastPublishTime > PUBLISH_PERIOD) {
+      lastPublishTime = now;
 
+      client.publish(temperature_topic, String(humidityRA.getAverage()).c_str(), true);
+      client.publish(humidity_topic, String(temperatureRA.getAverage()).c_str(), true);
+      client.publish(rzero_topic, String(rzeroRA.getAverage()).c_str(), true);
+      client.publish(co2_topic, String(co2RA.getAverage()).c_str(), true);
 
+      humidityRA.clear();
+      temperatureRA.clear();
+      rzeroRA.clear();
+      co2RA.clear();
     }
   } else {
     reconnect();
@@ -137,6 +162,4 @@ void loop() {
     delay(5000);
   }
   client.loop();
-
-  delay(500);
 }
