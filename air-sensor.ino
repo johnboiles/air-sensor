@@ -119,30 +119,28 @@ void loop() {
   ArduinoOTA.handle();
   yield();
 
-  if (client.connected()) {
-    long now = millis();
-    if (now - lastSampleTime > SAMPLE_PERIOD) {
-      lastSampleTime = now;
+  long now = millis();
+  if (now - lastSampleTime > SAMPLE_PERIOD) {
+    lastSampleTime = now;
 
-      // Reading temperature or humidity takes about 250 milliseconds!
-      // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-      float h = dht.readHumidity();
-      // Read temperature as Celsius (the default)
-      float t = dht.readTemperature();
-      if (isnan(h) || isnan(t)) {
-        Serial.println("ERROR: Failed to read from DHT sensor!");
-      } else {
-        float rzero = gasSensor.getCorrectedRZero(t, h); //this to get the rzero value, uncomment this to get ppm value
-        // Serial.printf("Rzero %s\n", String(rzero).c_str()); // this to display the rzero value continuously, uncomment this to get ppm value
-        float ppm = gasSensor.getCorrectedPPM(t, h); // this to get ppm value, uncomment this to get rzero value
-        // Serial.println(ppm); // this to display the ppm value continuously, uncomment this to get rzero value
+    // Reading temperature or humidity takes about 250 milliseconds!
+    // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+    float h = dht.readHumidity();
+    // Read temperature as Celsius (the default)
+    float t = dht.readTemperature();
+    if (isnan(h) || isnan(t)) {
+      Serial.println("ERROR: Failed to read from DHT sensor!");
+    } else {
+      float rzero = gasSensor.getCorrectedRZero(t, h);
+      float c02ppm = gasSensor.getCorrectedPPM(t, h);
 
-        humidityRA.addValue(h);
-        temperatureRA.addValue(t);
-        rzeroRA.addValue(rzero);
-        co2RA.addValue(ppm);
-      }
+      humidityRA.addValue(h);
+      temperatureRA.addValue(t);
+      rzeroRA.addValue(rzero);
+      co2RA.addValue(c02ppm);
     }
+  }
+  if (client.connected()) {
     if (now - lastPublishTime > PUBLISH_PERIOD) {
       lastPublishTime = now;
 
