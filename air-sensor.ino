@@ -5,6 +5,9 @@
 #include <MQ135.h>
 #include <DHT.h>
 #include <RunningAverage.h>
+#include "pms.h"
+#include "pms5003_packet.h"
+#include <ArduinoJson.h>
 
 #define ANALOGPIN A0
 #define HOSTNAME "ESP8266-OTA-"
@@ -26,6 +29,7 @@ const PROGMEM char* humidity_topic = "homeassistant/sensor/esp8266/humidity/stat
 const PROGMEM char* temperature_topic = "homeassistant/sensor/esp8266/temperature/state";
 const PROGMEM char* rzero_topic = "homeassistant/sensor/esp8266/rzero/state";
 const PROGMEM char* co2_topic = "homeassistant/sensor/esp8266/co2/state";
+const PROGMEM char* particulate_topic = "homeassistant/sensor/esp8266/particulate/state";
 
 const PROGMEM char* humidity_config_topic = "homeassistant/sensor/esp8266/humidity/config";
 const PROGMEM char* temperature_config_topic = "homeassistant/sensor/esp8266/temperature/config";
@@ -37,13 +41,22 @@ const PROGMEM char* password = ""; // Insert your SSID password here
 
 MQ135 gasSensor = MQ135(ANALOGPIN);
 
-RunningAverage rzeroRA(30);
-RunningAverage co2RA(30);
-RunningAverage temperatureRA(30);
-RunningAverage humidityRA(30);
+#define PMSRXPIN D5
+#define PMSTXPIN D6
+SoftwareSerial uart(PMSRXPIN, PMSTXPIN);
+PMS5003Packet pkt5003;
+PMS pms5003(uart, pkt5003);
 
-#define PUBLISH_PERIOD 30000
-#define SAMPLE_PERIOD 1000
+RunningAverage rzeroRA(60);
+RunningAverage co2RA(60);
+RunningAverage temperatureRA(60);
+RunningAverage humidityRA(60);
+RunningAverage pm1RA(60);
+RunningAverage pm25RA(60);
+RunningAverage pm10RA(60);
+
+#define PUBLISH_PERIOD 60000
+#define SAMPLE_PERIOD 2000
 
 // DHT - D1/GPIO5
 #define DHTPIN 5
@@ -85,10 +98,21 @@ void setup() {
   ArduinoOTA.setHostname((const char *)hostname.c_str());
   ArduinoOTA.begin();
 
+  pms5003.begin();
+
   rzeroRA.clear();
   co2RA.clear();
   temperatureRA.clear();
   humidityRA.clear();
+}
+
+bool has_sent_discover_config = false;
+
+void send_discover_config() {
+  client.publish(temperature_config_topic, temperature_config_message, true);
+  client.publish(humidity_config_topic, humidity_config_message, true);
+  client.publish(rzero_config_topic, rzero_config_message, true);
+  client.publish(co2_config_topic, co2_config_message, true);
 }
 
 void reconnect() {
@@ -100,10 +124,9 @@ void reconnect() {
     // if (client.connect("ESP8266Client")) {
     if (client.connect("ESP8266Client", mqtt_user, mqtt_password)) {
       Serial.println("connected");
-      client.publish(temperature_config_topic, temperature_config_message, true);
-      client.publish(humidity_config_topic, humidity_config_message, true);
-      client.publish(rzero_config_topic, rzero_config_message, true);
-      client.publish(co2_config_topic, co2_config_message, true);
+      if (!has_sent_discover_config) {
+        send_discover_config();
+      }
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -118,6 +141,12 @@ long lastPublishTime = 0;
 void loop() {
   ArduinoOTA.handle();
   yield();
+
+  DynamicJsonBuffer buffer;
+  JsonObject& root = buffer.createObject();
+  root["version"] = 1;
+  JsonArray &data = buffer.createArray();
+  root["data"] = data;
 
   long now = millis();
   if (now - lastSampleTime > SAMPLE_PERIOD) {
@@ -139,6 +168,14 @@ void loop() {
       rzeroRA.addValue(rzero);
       co2RA.addValue(c02ppm);
     }
+    if (pms5003.read()) {
+      Serial.printf("Got pms5003 packet %s %s %s\n", String(pkt5003.pm1()).c_str(), String(pkt5003.pm25()).c_str(), String(pkt5003.pm10()).c_str());
+      pm1RA.addValue(pkt5003.pm1());
+      pm25RA.addValue(pkt5003.pm25());
+      pm10RA.addValue(pkt5003.pm10());
+    } else {
+      Serial.println("Failed to get pms5003 packet");        
+    }
   }
   if (client.connected()) {
     if (now - lastPublishTime > PUBLISH_PERIOD) {
@@ -149,12 +186,26 @@ void loop() {
       client.publish(rzero_topic, String(rzeroRA.getAverage()).c_str(), true);
       client.publish(co2_topic, String(co2RA.getAverage()).c_str(), true);
 
+      if (pm1RA.getCount() > 0) {
+        pms5003.generateReport(data, buffer, pm1RA.getAverage(), pm25RA.getAverage(), pm10RA.getAverage());
+        String stream;
+        root.printTo(stream);
+        Serial.println(stream);
+        client.publish(particulate_topic, stream.c_str(), true);  
+      }
+
+      Serial.printf("Published averages of %d temp, %d hum, %d rzero, %d co2, %d pm1, %d pm2.5, %d pm10 readings\n", temperatureRA.getCount(), humidityRA.getCount(), rzeroRA.getCount(), co2RA.getCount(), pm1RA.getCount(), pm25RA.getCount(), pm10RA.getCount()); 
+
       humidityRA.clear();
       temperatureRA.clear();
       rzeroRA.clear();
       co2RA.clear();
+      pm1RA.clear();
+      pm25RA.clear();
+      pm10RA.clear();
     }
   } else {
+    Serial.println("Not connected, reconnecting");
     reconnect();
     // Wait 5 seconds before retrying
     delay(5000);
