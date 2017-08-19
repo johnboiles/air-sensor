@@ -3,7 +3,7 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <ArduinoOTA.h>
-#include <MQ135.h>
+#include "MQ135.h"
 #include <DHT.h>
 #include <RunningAverage.h>
 #include <ArduinoJson.h>
@@ -19,10 +19,9 @@ RemoteDebug Debug;
 #define DLOG(msg, ...)
 #endif
 
-#define ANALOGPIN A0
+#define MQ135PIN A0
 #define HOSTNAME "ESP8266-OTA-"
 
-#define mqtt_version MQTT_VERSION_3_1_1
 #define mqtt_server "10.0.0.2"
 #define mqtt_user "homeassistant"
 
@@ -45,7 +44,7 @@ const PROGMEM char* temperature_config_topic = "homeassistant/sensor/esp8266/tem
 const PROGMEM char* rzero_config_topic = "homeassistant/sensor/esp8266/rzero/config";
 const PROGMEM char* co2_config_topic = "homeassistant/sensor/esp8266/co2/config";
 
-MQ135 gasSensor = MQ135(ANALOGPIN);
+MQ135 gasSensor = MQ135(MQ135PIN);
 
 #define PMSRXPIN D5
 #define PMSTXPIN D6
