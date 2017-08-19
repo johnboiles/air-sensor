@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <PubSubClient.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
@@ -5,9 +6,18 @@
 #include <MQ135.h>
 #include <DHT.h>
 #include <RunningAverage.h>
-#include "pms.h"
-#include "pms5003_packet.h"
 #include <ArduinoJson.h>
+#include "pms.h"
+#include "packets/pms5003_packet.h"
+#include "secrets.h"
+
+#if LOGGING
+#include <RemoteDebug.h>
+#define DLOG(msg, ...) if(Debug.isActive(Debug.DEBUG)){Debug.printf(msg, ##__VA_ARGS__);}
+RemoteDebug Debug;
+#else
+#define DLOG(msg, ...)
+#endif
 
 #define ANALOGPIN A0
 #define HOSTNAME "ESP8266-OTA-"
@@ -15,7 +25,6 @@
 #define mqtt_version MQTT_VERSION_3_1_1
 #define mqtt_server "10.0.0.2"
 #define mqtt_user "homeassistant"
-#define mqtt_password ""
 
 // NOTE: These messages tend to be longer than PubSubClient likes so you need to modify
 // MQTT_MAX_PACKET_SIZE in PubSubClient.h
@@ -35,9 +44,6 @@ const PROGMEM char* humidity_config_topic = "homeassistant/sensor/esp8266/humidi
 const PROGMEM char* temperature_config_topic = "homeassistant/sensor/esp8266/temperature/config";
 const PROGMEM char* rzero_config_topic = "homeassistant/sensor/esp8266/rzero/config";
 const PROGMEM char* co2_config_topic = "homeassistant/sensor/esp8266/co2/config";
-
-const PROGMEM char* ssid = ""; // Insert your SSID here
-const PROGMEM char* password = ""; // Insert your SSID password here
 
 MQ135 gasSensor = MQ135(ANALOGPIN);
 
@@ -81,7 +87,7 @@ void setup() {
   hostname += String(ESP.getChipId(), HEX);
   WiFi.hostname(hostname);
 
-  WiFi.begin(ssid, password);
+  WiFi.begin(ssid, wifi_password);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -104,6 +110,13 @@ void setup() {
   co2RA.clear();
   temperatureRA.clear();
   humidityRA.clear();
+
+  #if LOGGING
+  // Initiaze the telnet server - HOST_NAME is the used in MDNS.begin
+  Debug.begin((const char *)hostname.c_str());
+  // Enable the reset command
+  Debug.setResetCmdEnabled(true);
+  #endif
 }
 
 bool has_sent_discover_config = false;
@@ -118,19 +131,17 @@ void send_discover_config() {
 void reconnect() {
   // Loop until we're reconnected
   while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
+    DLOG("Attempting MQTT connection...\n");
     // Attempt to connect
     // If you do not want to use a username and password, change next line to
     // if (client.connect("ESP8266Client")) {
     if (client.connect("ESP8266Client", mqtt_user, mqtt_password)) {
-      Serial.println("connected");
+      DLOG("MQTT connected\n");
       if (!has_sent_discover_config) {
         send_discover_config();
       }
     } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
+      DLOG("MQTT failed rc=%d try again in 5 seconds\n", client.state());
     }
   }
 }
@@ -158,7 +169,7 @@ void loop() {
     // Read temperature as Celsius (the default)
     float t = dht.readTemperature();
     if (isnan(h) || isnan(t)) {
-      Serial.println("ERROR: Failed to read from DHT sensor!");
+      DLOG("ERROR: Failed to read from DHT sensor!\n");
     } else {
       float rzero = gasSensor.getCorrectedRZero(t, h);
       float c02ppm = gasSensor.getCorrectedPPM(t, h);
@@ -169,12 +180,12 @@ void loop() {
       co2RA.addValue(c02ppm);
     }
     if (pms5003.read()) {
-      Serial.printf("Got pms5003 packet %s %s %s\n", String(pkt5003.pm1()).c_str(), String(pkt5003.pm25()).c_str(), String(pkt5003.pm10()).c_str());
+      DLOG("Got pms5003 packet %s %s %s\n", String(pkt5003.pm1()).c_str(), String(pkt5003.pm25()).c_str(), String(pkt5003.pm10()).c_str());
       pm1RA.addValue(pkt5003.pm1());
       pm25RA.addValue(pkt5003.pm25());
       pm10RA.addValue(pkt5003.pm10());
     } else {
-      Serial.println("Failed to get pms5003 packet");        
+      DLOG("Failed to get pms5003 packet\n");
     }
   }
   if (client.connected()) {
@@ -190,11 +201,13 @@ void loop() {
         pms5003.generateReport(data, buffer, pm1RA.getAverage(), pm25RA.getAverage(), pm10RA.getAverage());
         String stream;
         root.printTo(stream);
-        Serial.println(stream);
-        client.publish(particulate_topic, stream.c_str(), true);  
+        DLOG("%s\n", stream.c_str());
+        DLOG("Length of report %d\n", stream.length());
+        bool published = client.publish(particulate_topic, stream.c_str(), true);
+        DLOG("Published %d\n", published);
       }
 
-      Serial.printf("Published averages of %d temp, %d hum, %d rzero, %d co2, %d pm1, %d pm2.5, %d pm10 readings\n", temperatureRA.getCount(), humidityRA.getCount(), rzeroRA.getCount(), co2RA.getCount(), pm1RA.getCount(), pm25RA.getCount(), pm10RA.getCount()); 
+      DLOG("Published averages of %d temp, %d hum, %d rzero, %d co2, %d pm1, %d pm2.5, %d pm10 readings\n", temperatureRA.getCount(), humidityRA.getCount(), rzeroRA.getCount(), co2RA.getCount(), pm1RA.getCount(), pm25RA.getCount(), pm10RA.getCount());
 
       humidityRA.clear();
       temperatureRA.clear();
@@ -205,10 +218,10 @@ void loop() {
       pm10RA.clear();
     }
   } else {
-    Serial.println("Not connected, reconnecting");
     reconnect();
     // Wait 5 seconds before retrying
     delay(5000);
   }
   client.loop();
+  Debug.handle();
 }

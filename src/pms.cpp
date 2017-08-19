@@ -9,7 +9,7 @@ bool PMS::probe() {
   wake_up(true);
   delay(1000);
   detected = readUntilSuccessful(4);
-  uart.end();
+  //uart.end();
   return detected;
 }
 

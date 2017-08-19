@@ -5,7 +5,7 @@
 #include <ArduinoJson.h>
 #include <SoftwareSerial.h>
 
-#include "pms_packet_interface.h"
+#include "packets/pms_packet_interface.h"
 
 class PMS {
 public:
