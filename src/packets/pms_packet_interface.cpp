@@ -1,4 +1,4 @@
-#include "pms_packet_interface.h"
+#include "packets/pms_packet_interface.h"
 
 bool PMSPacketInterface::is_valid() const {
   if (start1 != 0x42 || start2 != 0x4d) return false;

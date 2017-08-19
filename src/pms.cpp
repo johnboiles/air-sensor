@@ -1,4 +1,5 @@
 #include "pms.h"
+#include "debug.h"
 
 PMS::PMS(SoftwareSerial &_uart, PMSPacketInterface &_packet) : uart(_uart), packet(_packet), detected(false) {
   // NOOP
@@ -32,6 +33,8 @@ bool PMS::read() {
 
       if (packet.is_valid()) {
         return true;
+      } else {
+        DLOG("Got a packet but it was invalid\n")
       }
     } else {
       uart.read();

@@ -10,14 +10,7 @@
 #include "pms.h"
 #include "packets/pms5003_packet.h"
 #include "secrets.h"
-
-#if LOGGING
-#include <RemoteDebug.h>
-#define DLOG(msg, ...) if(Debug.isActive(Debug.DEBUG)){Debug.printf(msg, ##__VA_ARGS__);}
-RemoteDebug Debug;
-#else
-#define DLOG(msg, ...)
-#endif
+#include "debug.h"
 
 #define MQ135PIN A0
 #define HOSTNAME "ESP8266-OTA-"
@@ -48,7 +41,7 @@ MQ135 gasSensor = MQ135(MQ135PIN);
 
 #define PMSRXPIN D5
 #define PMSTXPIN D6
-SoftwareSerial uart(PMSRXPIN, PMSTXPIN);
+SoftwareSerial uart(PMSRXPIN, PMSTXPIN, false, 128);
 PMS5003Packet pkt5003;
 PMS pms5003(uart, pkt5003);
 
@@ -61,7 +54,7 @@ RunningAverage pm25RA(60);
 RunningAverage pm10RA(60);
 
 #define PUBLISH_PERIOD 60000
-#define SAMPLE_PERIOD 2000
+#define SAMPLE_PERIOD 1000
 
 // DHT - D1/GPIO5
 #define DHTPIN 5
