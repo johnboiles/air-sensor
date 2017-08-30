@@ -11,6 +11,7 @@
 #include "packets/pms5003_packet.h"
 #include "secrets.h"
 #include "debug.h"
+#include <MHZ19_uart.h>
 
 #define MQ135PIN A0
 #define HOSTNAME "ESP8266-OTA-"
@@ -24,18 +25,21 @@ const PROGMEM char* humidity_config_message = "{\"name\": \"Esp8266 Temperature\
 const PROGMEM char* temperature_config_message = "{\"name\": \"Esp8266 Humidity\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"%rh\"}";
 const PROGMEM char* rzero_config_message = "{\"name\": \"Esp8266 RZero\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"z\"}";
 const PROGMEM char* co2_config_message = "{\"name\": \"Esp8266 CO2\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"ppm\"}";
+const PROGMEM char* mhz19_co2_config_message = "{\"name\": \"Esp8266 MHZ19 CO2\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"ppm\"}";
 
 // Home-assistant auto-discovery <discovery_prefix>/<component>/[<node_id>/]<object_id>/<>
 const PROGMEM char* humidity_topic = "homeassistant/sensor/esp8266/humidity/state";
 const PROGMEM char* temperature_topic = "homeassistant/sensor/esp8266/temperature/state";
 const PROGMEM char* rzero_topic = "homeassistant/sensor/esp8266/rzero/state";
 const PROGMEM char* co2_topic = "homeassistant/sensor/esp8266/co2/state";
+const PROGMEM char* mhz19_co2_topic = "homeassistant/sensor/esp8266/mhz19_co2/state";
 const PROGMEM char* particulate_topic = "homeassistant/sensor/esp8266/particulate/state";
 
 const PROGMEM char* humidity_config_topic = "homeassistant/sensor/esp8266/humidity/config";
 const PROGMEM char* temperature_config_topic = "homeassistant/sensor/esp8266/temperature/config";
 const PROGMEM char* rzero_config_topic = "homeassistant/sensor/esp8266/rzero/config";
 const PROGMEM char* co2_config_topic = "homeassistant/sensor/esp8266/co2/config";
+const PROGMEM char* mhz19_co2_config_topic = "homeassistant/sensor/esp8266/mhz19_co2/config";
 
 MQ135 gasSensor = MQ135(MQ135PIN);
 
@@ -52,9 +56,20 @@ RunningAverage humidityRA(60);
 RunningAverage pm1RA(60);
 RunningAverage pm25RA(60);
 RunningAverage pm10RA(60);
+RunningAverage mhz19CO2RA(12);
 
 #define PUBLISH_PERIOD 60000
 #define SAMPLE_PERIOD 1000
+// Seems like the MHZ19 only updates its value every 5s or so
+#define MHZ19_SAMPLE_PERIOD 5000
+
+// UART TX connected to the RX pin on the M19
+#define M19TX D2
+// UART RX connected to the TX pin on the M19
+#define M19RX D3
+// SoftwareSerial m19UART(M19RX, M19TX, false, 128);
+MHZ19_uart mhz19(M19RX, M19TX);
+
 
 // DHT - D1/GPIO5
 #define DHTPIN 5
@@ -118,6 +133,7 @@ void send_discover_config() {
   client.publish(humidity_config_topic, humidity_config_message, true);
   client.publish(rzero_config_topic, rzero_config_message, true);
   client.publish(co2_config_topic, co2_config_message, true);
+  client.publish(mhz19_co2_config_topic, mhz19_co2_config_message, true);
 }
 
 void reconnect() {
@@ -139,6 +155,7 @@ void reconnect() {
 }
 
 long lastSampleTime = 0;
+long lastMHZ19SampleTime = 0;
 long lastPublishTime = 0;
 
 void loop() {
@@ -179,15 +196,27 @@ void loop() {
     } else {
       DLOG("Failed to get pms5003 packet\n");
     }
+
   }
+
+  if (now - lastMHZ19SampleTime > MHZ19_SAMPLE_PERIOD) {
+    lastMHZ19SampleTime = now;
+    int co2PPM = mhz19.getPPM();
+    DLOG("Got CO2 PPM from MHZ19 %d\n", co2PPM);
+    if (co2PPM > 0) {
+      mhz19CO2RA.addValue(co2PPM);
+    }
+  }
+
   if (client.connected()) {
     if (now - lastPublishTime > PUBLISH_PERIOD) {
       lastPublishTime = now;
 
-      client.publish(temperature_topic, String(humidityRA.getAverage()).c_str(), true);
-      client.publish(humidity_topic, String(temperatureRA.getAverage()).c_str(), true);
-      client.publish(rzero_topic, String(rzeroRA.getAverage()).c_str(), true);
-      client.publish(co2_topic, String(co2RA.getAverage()).c_str(), true);
+      client.publish(temperature_topic, String(humidityRA.getAverage()).c_str(), false);
+      client.publish(humidity_topic, String(temperatureRA.getAverage()).c_str(), false);
+      client.publish(rzero_topic, String(rzeroRA.getAverage()).c_str(), false);
+      client.publish(co2_topic, String(co2RA.getAverage()).c_str(), false);
+      client.publish(mhz19_co2_topic, String(mhz19CO2RA.getAverage()).c_str(), false);
 
       if (pm1RA.getCount() > 0) {
         pms5003.generateReport(data, buffer, pm1RA.getAverage(), pm25RA.getAverage(), pm10RA.getAverage());
@@ -208,6 +237,7 @@ void loop() {
       pm1RA.clear();
       pm25RA.clear();
       pm10RA.clear();
+      mhz19CO2RA.clear();
     }
   } else {
     reconnect();
