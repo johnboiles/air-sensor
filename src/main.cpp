@@ -9,15 +9,9 @@
 #include <ArduinoJson.h>
 #include "pms.h"
 #include "packets/pms5003_packet.h"
-#include "secrets.h"
 #include "debug.h"
 #include <MHZ19_uart.h>
-
-#define MQ135PIN A0
-#define HOSTNAME "ESP8266-OTA-"
-
-#define mqtt_server "10.0.0.2"
-#define mqtt_user "homeassistant"
+#include "config.h"
 
 // NOTE: These messages tend to be longer than PubSubClient likes so you need to modify
 // MQTT_MAX_PACKET_SIZE in PubSubClient.h
@@ -43,41 +37,25 @@ const PROGMEM char* mhz19_co2_config_topic = "homeassistant/sensor/esp8266/mhz19
 
 MQ135 gasSensor = MQ135(MQ135PIN);
 
-#define PMSRXPIN D5
-#define PMSTXPIN D6
 SoftwareSerial uart(PMSRXPIN, PMSTXPIN, false, 128);
 PMS5003Packet pkt5003;
 PMS pms5003(uart, pkt5003);
 
-RunningAverage rzeroRA(60);
-RunningAverage co2RA(60);
-RunningAverage temperatureRA(60);
-RunningAverage humidityRA(60);
-RunningAverage pm1RA(60);
-RunningAverage pm25RA(60);
-RunningAverage pm10RA(60);
-RunningAverage mhz19CO2RA(12);
-
-#define PUBLISH_PERIOD 60000
-#define SAMPLE_PERIOD 1000
-// Seems like the MHZ19 only updates its value every 5s or so
-#define MHZ19_SAMPLE_PERIOD 5000
-
-// UART TX connected to the RX pin on the M19
-#define M19TX D2
-// UART RX connected to the TX pin on the M19
-#define M19RX D3
 // SoftwareSerial m19UART(M19RX, M19TX, false, 128);
 MHZ19_uart mhz19(M19RX, M19TX);
-
-
-// DHT - D1/GPIO5
-#define DHTPIN 5
-#define DHTTYPE DHT22
 
 DHT dht(DHTPIN, DHTTYPE);
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
+
+RunningAverage rzeroRA(SAMPLES_PER_PUBLISH);
+RunningAverage co2RA(SAMPLES_PER_PUBLISH);
+RunningAverage temperatureRA(SAMPLES_PER_PUBLISH);
+RunningAverage humidityRA(SAMPLES_PER_PUBLISH);
+RunningAverage pm1RA(SAMPLES_PER_PUBLISH);
+RunningAverage pm25RA(SAMPLES_PER_PUBLISH);
+RunningAverage pm10RA(SAMPLES_PER_PUBLISH);
+RunningAverage mhz19CO2RA(MHZ19_SAMPLES_PER_PUBLISH);
 
 void setup() {
   dht.begin();
@@ -91,7 +69,6 @@ void setup() {
 
   // Set Hostname.
   String hostname(HOSTNAME);
-  hostname += String(ESP.getChipId(), HEX);
   WiFi.hostname(hostname);
 
   WiFi.begin(ssid, wifi_password);
