@@ -16,13 +16,11 @@ First off you'll need to create a `src/secrets.h`. This file is `.gitignore`'d s
 
 Then edit your `src/secrets.h` file to reflect your wifi ssid/password and MQTT configuration.
 
-The easiest way to build and upload the code is with the [PlatformIO IDE](http://platformio.org/platformio-ide).
+The easiest way to build and upload the code is with the [PlatformIO IDE](http://platformio.org/platformio-ide). I like the PlatformIO IDE extension for VSCode the best.
 
-The first time you program your board you'll want to do it over USB. After that, programming can be done over wifi. To program over USB, change the `upload_port` in the `platformio.ini` file to point to the USB-serial device for your board. Probably something like the following will work if you're on a Mac.
+The first time you program your board you'll want to do it over USB. After that, programming can be done over wifi. To program over USB, remove the `upload_port` line in the `platformio.ini` file. PlatformIO can typically autodetect the right serial port.
 
-    upload_port = /dev/tty.cu*
-
-After that, from the one of the PlatformIO IDEs (I like the PlatformIO extension for VSCode), you should be able to go to PlatformIO->Upload in the menu.
+After that, replace the `upload_port` line in the `platformio.ini` file, and you should be able to program the board over wifi.
 
 ## Debugging
 
