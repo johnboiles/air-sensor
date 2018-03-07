@@ -3,7 +3,6 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <ArduinoOTA.h>
-#include "MQ135.h"
 #include <DHT.h>
 #include <RunningAverage.h>
 #include <ArduinoJson.h>
@@ -13,35 +12,21 @@
 #include "debug.h"
 #include <MHZ19_uart.h>
 
-#define MQ135PIN A0
-#define HOSTNAME "ESP8266-OTA-"
-
-#define mqtt_server "10.0.0.2"
-#define mqtt_user "homeassistant"
-
 // NOTE: These messages tend to be longer than PubSubClient likes so you need to modify
 // MQTT_MAX_PACKET_SIZE in PubSubClient.h
 const PROGMEM char* humidity_config_message = "{\"name\": \"Esp8266 Temperature\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"°C\"}";
-const PROGMEM char* temperature_config_message = "{\"name\": \"Esp8266 Humidity\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"%rh\"}";
-const PROGMEM char* rzero_config_message = "{\"name\": \"Esp8266 RZero\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"z\"}";
+const PROGMEM char* temperature_config_message = "{\"name\": \"Esp8266 Humidity\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"%\"}";
 const PROGMEM char* co2_config_message = "{\"name\": \"Esp8266 CO2\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"ppm\"}";
-const PROGMEM char* mhz19_co2_config_message = "{\"name\": \"Esp8266 MHZ19 CO2\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"ppm\"}";
 
 // Home-assistant auto-discovery <discovery_prefix>/<component>/[<node_id>/]<object_id>/<>
 const PROGMEM char* humidity_topic = "homeassistant/sensor/esp8266/humidity/state";
 const PROGMEM char* temperature_topic = "homeassistant/sensor/esp8266/temperature/state";
-const PROGMEM char* rzero_topic = "homeassistant/sensor/esp8266/rzero/state";
 const PROGMEM char* co2_topic = "homeassistant/sensor/esp8266/co2/state";
-const PROGMEM char* mhz19_co2_topic = "homeassistant/sensor/esp8266/mhz19_co2/state";
 const PROGMEM char* particulate_topic = "homeassistant/sensor/esp8266/particulate/state";
 
 const PROGMEM char* humidity_config_topic = "homeassistant/sensor/esp8266/humidity/config";
 const PROGMEM char* temperature_config_topic = "homeassistant/sensor/esp8266/temperature/config";
-const PROGMEM char* rzero_config_topic = "homeassistant/sensor/esp8266/rzero/config";
 const PROGMEM char* co2_config_topic = "homeassistant/sensor/esp8266/co2/config";
-const PROGMEM char* mhz19_co2_config_topic = "homeassistant/sensor/esp8266/mhz19_co2/config";
-
-MQ135 gasSensor = MQ135(MQ135PIN);
 
 #define PMSRXPIN D5
 #define PMSTXPIN D6
@@ -49,14 +34,12 @@ SoftwareSerial uart(PMSRXPIN, PMSTXPIN, false, 128);
 PMS5003Packet pkt5003;
 PMS pms5003(uart, pkt5003);
 
-RunningAverage rzeroRA(60);
-RunningAverage co2RA(60);
+RunningAverage co2RA(12);
 RunningAverage temperatureRA(60);
 RunningAverage humidityRA(60);
 RunningAverage pm1RA(60);
 RunningAverage pm25RA(60);
 RunningAverage pm10RA(60);
-RunningAverage mhz19CO2RA(12);
 
 #define PUBLISH_PERIOD 60000
 #define SAMPLE_PERIOD 1000
@@ -87,14 +70,13 @@ void setup() {
   Serial.println();
   Serial.println();
   Serial.print("Connecting to ");
-  Serial.println(ssid);
+  Serial.println(WIFI_SSID);
 
   // Set Hostname.
   String hostname(HOSTNAME);
-  hostname += String(ESP.getChipId(), HEX);
   WiFi.hostname(hostname);
 
-  WiFi.begin(ssid, wifi_password);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -106,17 +88,19 @@ void setup() {
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
 
-  client.setServer(mqtt_server, 1883);
+  client.setServer(MQTT_SERVER, 1883);
 
   ArduinoOTA.setHostname((const char *)hostname.c_str());
   ArduinoOTA.begin();
 
   pms5003.begin();
 
-  rzeroRA.clear();
   co2RA.clear();
   temperatureRA.clear();
   humidityRA.clear();
+  pm1RA.clear();
+  pm25RA.clear();
+  pm10RA.clear();
 
   #if LOGGING
   // Initiaze the telnet server - HOST_NAME is the used in MDNS.begin
@@ -131,9 +115,7 @@ bool has_sent_discover_config = false;
 void send_discover_config() {
   client.publish(temperature_config_topic, temperature_config_message, true);
   client.publish(humidity_config_topic, humidity_config_message, true);
-  client.publish(rzero_config_topic, rzero_config_message, true);
   client.publish(co2_config_topic, co2_config_message, true);
-  client.publish(mhz19_co2_config_topic, mhz19_co2_config_message, true);
 }
 
 void reconnect() {
@@ -143,7 +125,7 @@ void reconnect() {
     // Attempt to connect
     // If you do not want to use a username and password, change next line to
     // if (client.connect("ESP8266Client")) {
-    if (client.connect("ESP8266Client", mqtt_user, mqtt_password)) {
+    if (client.connect("ESP8266Client", MQTT_USER, MQTT_PASSWORD)) {
       DLOG("MQTT connected\n");
       if (!has_sent_discover_config) {
         send_discover_config();
@@ -180,13 +162,8 @@ void loop() {
     if (isnan(h) || isnan(t)) {
       DLOG("ERROR: Failed to read from DHT sensor!\n");
     } else {
-      float rzero = gasSensor.getCorrectedRZero(t, h);
-      float c02ppm = gasSensor.getCorrectedPPM(t, h);
-
       humidityRA.addValue(h);
       temperatureRA.addValue(t);
-      rzeroRA.addValue(rzero);
-      co2RA.addValue(c02ppm);
     }
     if (pms5003.read()) {
       DLOG("Got pms5003 packet %s %s %s\n", String(pkt5003.pm1()).c_str(), String(pkt5003.pm25()).c_str(), String(pkt5003.pm10()).c_str());
@@ -204,7 +181,7 @@ void loop() {
     int co2PPM = mhz19.getPPM();
     DLOG("Got CO2 PPM from MHZ19 %d\n", co2PPM);
     if (co2PPM > 0) {
-      mhz19CO2RA.addValue(co2PPM);
+      co2RA.addValue(co2PPM);
     }
   }
 
@@ -214,9 +191,7 @@ void loop() {
 
       client.publish(temperature_topic, String(humidityRA.getAverage()).c_str(), false);
       client.publish(humidity_topic, String(temperatureRA.getAverage()).c_str(), false);
-      client.publish(rzero_topic, String(rzeroRA.getAverage()).c_str(), false);
       client.publish(co2_topic, String(co2RA.getAverage()).c_str(), false);
-      client.publish(mhz19_co2_topic, String(mhz19CO2RA.getAverage()).c_str(), false);
 
       if (pm1RA.getCount() > 0) {
         pms5003.generateReport(data, buffer, pm1RA.getAverage(), pm25RA.getAverage(), pm10RA.getAverage());
@@ -228,16 +203,14 @@ void loop() {
         DLOG("Published %d\n", published);
       }
 
-      DLOG("Published averages of %d temp, %d hum, %d rzero, %d co2, %d pm1, %d pm2.5, %d pm10 readings\n", temperatureRA.getCount(), humidityRA.getCount(), rzeroRA.getCount(), co2RA.getCount(), pm1RA.getCount(), pm25RA.getCount(), pm10RA.getCount());
+      DLOG("Published averages of %d temp, %d hum, %d pm1, %d pm2.5, %d pm10 readings\n", temperatureRA.getCount(), humidityRA.getCount(), pm1RA.getCount(), pm25RA.getCount(), pm10RA.getCount());
 
       humidityRA.clear();
       temperatureRA.clear();
-      rzeroRA.clear();
       co2RA.clear();
       pm1RA.clear();
       pm25RA.clear();
       pm10RA.clear();
-      mhz19CO2RA.clear();
     }
   } else {
     reconnect();
