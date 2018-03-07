@@ -12,21 +12,12 @@
 #include "debug.h"
 #include <MHZ19_uart.h>
 
-// NOTE: These messages tend to be longer than PubSubClient likes so you need to modify
-// MQTT_MAX_PACKET_SIZE in PubSubClient.h
-const PROGMEM char* humidity_config_message = "{\"name\": \"Esp8266 Temperature\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"°C\"}";
-const PROGMEM char* temperature_config_message = "{\"name\": \"Esp8266 Humidity\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"%\"}";
-const PROGMEM char* co2_config_message = "{\"name\": \"Esp8266 CO2\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"ppm\"}";
-
-// Home-assistant auto-discovery <discovery_prefix>/<component>/[<node_id>/]<object_id>/<>
-const PROGMEM char* humidity_topic = "homeassistant/sensor/esp8266/humidity/state";
-const PROGMEM char* temperature_topic = "homeassistant/sensor/esp8266/temperature/state";
-const PROGMEM char* co2_topic = "homeassistant/sensor/esp8266/co2/state";
-const PROGMEM char* particulate_topic = "homeassistant/sensor/esp8266/particulate/state";
-
-const PROGMEM char* humidity_config_topic = "homeassistant/sensor/esp8266/humidity/config";
-const PROGMEM char* temperature_config_topic = "homeassistant/sensor/esp8266/temperature/config";
-const PROGMEM char* co2_config_topic = "homeassistant/sensor/esp8266/co2/config";
+const PROGMEM char* humidity_topic = "johnboiles/feeds/humidity";
+const PROGMEM char* temperature_topic = "johnboiles/feeds/temperature";
+const PROGMEM char* co2_topic = "johnboiles/feeds/co2";
+const PROGMEM char* pm1_topic = "johnboiles/feeds/pm1";
+const PROGMEM char* pm25_topic = "johnboiles/feeds/pm25";
+const PROGMEM char* pm10_topic = "johnboiles/feeds/pm10";
 
 #define PMSRXPIN D5
 #define PMSTXPIN D6
@@ -53,7 +44,6 @@ RunningAverage pm10RA(60);
 // SoftwareSerial m19UART(M19RX, M19TX, false, 128);
 MHZ19_uart mhz19(M19RX, M19TX);
 
-
 // DHT - D1/GPIO5
 #define DHTPIN 5
 #define DHTTYPE DHT22
@@ -61,6 +51,19 @@ MHZ19_uart mhz19(M19RX, M19TX);
 DHT dht(DHTPIN, DHTTYPE);
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
+
+void reconnect() {
+  DLOG("Attempting MQTT connection...\n");
+  // Use a random ID
+  String clientId = "ESP8266Client-";
+  clientId += String(random(0xffff), HEX);
+  // Attempt to connect
+  if (client.connect(clientId.c_str(), MQTT_USER, MQTT_PASSWORD)) {
+    DLOG("MQTT connected state=%d\n", client.state());
+  } else {
+    DLOG("MQTT failed rc=%d try again in 5 seconds\n", client.state());
+  }
+}
 
 void setup() {
   dht.begin();
@@ -108,32 +111,8 @@ void setup() {
   // Enable the reset command
   Debug.setResetCmdEnabled(true);
   #endif
-}
 
-bool has_sent_discover_config = false;
-
-void send_discover_config() {
-  client.publish(temperature_config_topic, temperature_config_message, true);
-  client.publish(humidity_config_topic, humidity_config_message, true);
-  client.publish(co2_config_topic, co2_config_message, true);
-}
-
-void reconnect() {
-  // Loop until we're reconnected
-  while (!client.connected()) {
-    DLOG("Attempting MQTT connection...\n");
-    // Attempt to connect
-    // If you do not want to use a username and password, change next line to
-    // if (client.connect("ESP8266Client")) {
-    if (client.connect("ESP8266Client", MQTT_USER, MQTT_PASSWORD)) {
-      DLOG("MQTT connected\n");
-      if (!has_sent_discover_config) {
-        send_discover_config();
-      }
-    } else {
-      DLOG("MQTT failed rc=%d try again in 5 seconds\n", client.state());
-    }
-  }
+  reconnect();
 }
 
 long lastSampleTime = 0;
@@ -143,12 +122,6 @@ long lastPublishTime = 0;
 void loop() {
   ArduinoOTA.handle();
   yield();
-
-  DynamicJsonBuffer buffer;
-  JsonObject& root = buffer.createObject();
-  root["version"] = 1;
-  JsonArray &data = buffer.createArray();
-  root["data"] = data;
 
   long now = millis();
   if (now - lastSampleTime > SAMPLE_PERIOD) {
@@ -194,16 +167,13 @@ void loop() {
       client.publish(co2_topic, String(co2RA.getAverage()).c_str(), false);
 
       if (pm1RA.getCount() > 0) {
-        pms5003.generateReport(data, buffer, pm1RA.getAverage(), pm25RA.getAverage(), pm10RA.getAverage());
-        String stream;
-        root.printTo(stream);
-        DLOG("%s\n", stream.c_str());
-        DLOG("Length of report %d\n", stream.length());
-        bool published = client.publish(particulate_topic, stream.c_str(), true);
-        DLOG("Published %d\n", published);
+        bool published1 = client.publish(pm1_topic, String(pm1RA.getAverage()).c_str(), false);
+        bool published25 = client.publish(pm25_topic, String(pm25RA.getAverage()).c_str(), false);
+        bool published10 = client.publish(pm10_topic, String(pm10RA.getAverage()).c_str(), false);
+        DLOG("Published %d %d %d\n", published1, published25, published10);
       }
 
-      DLOG("Published averages of %d temp, %d hum, %d pm1, %d pm2.5, %d pm10 readings\n", temperatureRA.getCount(), humidityRA.getCount(), pm1RA.getCount(), pm25RA.getCount(), pm10RA.getCount());
+      DLOG("Published averages of %d temp, %d hum, %d pm1, %d pm2.5, %d pm10, %d co2 readings\n", temperatureRA.getCount(), humidityRA.getCount(), pm1RA.getCount(), pm25RA.getCount(), pm10RA.getCount(), co2RA.getCount());
 
       humidityRA.clear();
       temperatureRA.clear();
@@ -213,9 +183,14 @@ void loop() {
       pm10RA.clear();
     }
   } else {
-    reconnect();
+    DLOG("Waiting 5s to re-attempt connection\n");
     // Wait 5 seconds before retrying
-    delay(5000);
+    for (int i = 0; i < 5000; i++) {
+      ArduinoOTA.handle();
+      Debug.handle();
+      delay(1);
+    }
+    reconnect();
   }
   client.loop();
   Debug.handle();
