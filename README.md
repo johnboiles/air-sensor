@@ -23,3 +23,7 @@ The first time you program your board you'll want to do it over USB. After that,
     upload_port = /dev/tty.cu*
 
 After that, from the one of the PlatformIO IDEs (I like the PlatformIO extension for VSCode), you should be able to go to PlatformIO->Upload in the menu.
+
+## Debugging
+
+Included in the firmware is a telnet debugging interface. To connect run `telnet air-sensor.local` (replace `air-sensor` with the `HOSTNAME` you set in `secrets.h`. With that you can log messages from code with the `DLOG` macro and also send commands back that the code can act on (see the `debugCallback` function).
