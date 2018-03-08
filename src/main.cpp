@@ -40,7 +40,7 @@ RunningAverage pm10RA(60);
 // UART TX connected to the RX pin on the M19
 #define M19TX D2
 // UART RX connected to the TX pin on the M19
-#define M19RX D3
+#define M19RX D4
 // SoftwareSerial m19UART(M19RX, M19TX, false, 128);
 MHZ19_uart mhz19(M19RX, M19TX);
 
