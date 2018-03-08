@@ -16,6 +16,10 @@ First off you'll need to create a `src/secrets.h`. This file is `.gitignore`'d s
 
 Then edit your `src/secrets.h` file to reflect your wifi ssid/password and MQTT configuration.
 
+## Programming the board
+
+If you don't have it already, you probably need a driver for the CH340 USB->Serial chip. [This janky looking website](http://www.wch.cn/download/CH341SER_MAC_ZIP.html) is the chip manufacturer's official download page.
+
 The easiest way to build and upload the code is with the [PlatformIO IDE](http://platformio.org/platformio-ide). I like the PlatformIO IDE extension for VSCode the best.
 
 The first time you program your board you'll want to do it over USB. After that, programming can be done over wifi. To program over USB, remove the `upload_port` line in the `platformio.ini` file. PlatformIO can typically autodetect the right serial port.
