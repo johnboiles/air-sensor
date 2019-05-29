@@ -14,9 +14,9 @@
 
 // NOTE: These messages tend to be longer than PubSubClient likes so you need to modify
 // MQTT_MAX_PACKET_SIZE in PubSubClient.h
-const PROGMEM char* humidity_config_message = "{\"name\": \"Esp8266 Temperature\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"°C\"}";
-const PROGMEM char* temperature_config_message = "{\"name\": \"Esp8266 Humidity\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"%\"}";
-const PROGMEM char* co2_config_message = "{\"name\": \"Esp8266 CO2\", \"device_class\": \"sensor\", \"unit_of_measurement\": \"ppm\"}";
+const PROGMEM char* humidity_config_message = "{\"name\": \"Esp8266 Temperature\", \"unit_of_measurement\": \"°C\", \"state_topic\":\"homeassistant/sensor/esp8266/humidity/state\"}";
+const PROGMEM char* temperature_config_message = "{\"name\": \"Esp8266 Humidity\", \"unit_of_measurement\": \"%\", \"state_topic\":\"homeassistant/sensor/esp8266/temperature/state\"}";
+const PROGMEM char* co2_config_message = "{\"name\": \"Esp8266 CO2\", \"unit_of_measurement\": \"ppm\", \"state_topic\":\"homeassistant/sensor/esp8266/co2/state\"}";
 
 // Home-assistant auto-discovery <discovery_prefix>/<component>/[<node_id>/]<object_id>/<>
 const PROGMEM char* humidity_topic = "homeassistant/sensor/esp8266/humidity/state";
