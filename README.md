@@ -1,3 +1,5 @@
+*DEPRECATED. I've now moved to using [ESPHome](https://esphome.io/) for my air sensor. See [here](https://github.com/johnboiles/homeassistant-config/tree/master/esphome) for my ESPHome configs (specifically look at [`air_sensor.yaml`](https://github.com/johnboiles/homeassistant-config/blob/master/esphome/air_sensor.yaml).*
+
 # air-sensor
 
 Monitor temperature, humidity, particulate count, and CO2 with an ESP12 and some cheap-ish sensors.
